@@ -142,8 +142,8 @@ router.get('/', async(req, res) => {
         const profiles = await prisma.profile.findMany({where})
         const count = profiles.length
         return res.status(200).json({
-                "count": count,
                 "status": "success",
+                 "count": count,
                 "data": profiles
             })
     }catch(error){
