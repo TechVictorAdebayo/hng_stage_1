@@ -4,6 +4,86 @@ const router = express.Router();
 const prisma = require('../prismaClient');
 const {uuidv7} = require ('uuidv7');
 
+const countryMap = {}
+
+async function buildCountryMap (){
+
+    try{
+        const  countries = await prisma.profile.findMany({
+        select: {
+            country_name: true,
+            country_id: true
+        },
+        distinct: ['country_id']
+    })
+    for (const country of countries){
+    countryMap[country.country_name.toLowerCase()] = country.country_id
+}
+console.log('Country Map built successfully');
+
+    }catch(error){
+        console.log('Failed to build country map:', error.message);
+        
+    }
+    
+
+}
+
+
+buildCountryMap()
+
+function parseQuery(q){
+    const query = q.toLowerCase()
+    const filters = {}
+
+    if (query.includes('male and female') || query.includes('female and male')){
+
+    }else if (query.includes('male') || query.includes('males') || 
+        query.includes('man') || query.includes('men') ||
+        query.includes('boy') || query.includes('boys')){
+        filters.gender = 'male'
+    }else if (query.includes('female') || query.includes('females') || 
+        query.includes('woman') || query.includes('women') ||
+        query.includes('lady') || query.includes('ladies') ||
+        query.includes('girl') || query.includes('girls')){
+        filters.gender = 'female'
+    }
+
+    if (query.includes('young') || query.includes('youth')){
+        filters.min_age = 16
+        filters.max_age = 24
+    }else if (query.includes('child') || query.includes('children') ||
+        query.includes('kid') || query.includes('kids')){
+            filters.age_group = "child"
+        }
+    else if (query.includes('teenager') || query.includes('teenagers') || 
+        query.includes('teen')  || query.includes('teens') || query.includes('adolescent') ){
+            filters.age_group = "teenager"
+        }
+    else if (query.includes('adult') || query.includes('adults') ){
+        filters.age_group = "adult"
+    }
+    else if(query.includes('senior') || query.includes('seniors')  ||
+         query.includes('elderly')  || query.includes('old') ){
+        filters.age_group = "senior"
+    }
+
+    const aboveMatch = query.match(/(?:above|over|older than)\s+(\d+)/)
+    if (aboveMatch) filters.min_age = parseInt(aboveMatch[1])
+
+    const belowMatch = query.match(/(?:below|under|younger than)\s+(\d+)/)
+    if (belowMatch) filters.max_age = parseInt(belowMatch[1])
+
+    for (const [countryName, code] of Object.entries(countryMap)){
+        if (query.includes(countryName)){
+            filters.country_id = code
+            break
+        }
+    }
+
+    return filters
+}
+
 
 router.post('/', async(req, res) => {
     const {name} = req.body
@@ -104,10 +184,10 @@ router.post('/', async(req, res) => {
             name: normalizedName,
             gender: gender,
             gender_probability: gender_probability,
-            sample_size: sample_size,
             age: age,
             age_group: age_group,
             country_id: country_id,
+            country_name: country_id,
             country_probability: country_probability            }
         }) 
         return res.status(201).json({
@@ -132,26 +212,172 @@ router.post('/', async(req, res) => {
 })
 
 router.get('/', async(req, res) => {
-    const {gender, country_id, age_group} =req.query
+    const {gender, country_id, age_group,
+        min_age, max_age,
+        min_gender_probability, min_country_probability,
+        sort_by, order, page, limit
+    } =req.query
+
+    // Validation
+    const validSortFields = ['age', 'created_at', 'gender_probability']
+    const validOrders = ['asc', 'desc']
+
+    if (sort_by && !validSortFields.includes(sort_by)){
+        return res.status(422).json({
+            "status": "error",
+            "message": "Invalid query parameters"
+        })
+    }
+
+    if (order &&  !validOrders.includes(order.toLowerCase())){
+        return res.status(422).json({
+            "status": "error",
+            "message": "Invalid query parameters"
+        })
+    }
+
+    if (min_age && isNaN(Number(min_age))){
+        return res.status(422).json({
+            "status": "error",
+            "message": "Invalid query parameters"
+        })
+    }
+
+    if (max_age && isNaN(Number(max_age))){
+        return res.status(422).json({
+            "status": "error",
+            "message": "Invalid query paramaters"
+        })
+    }
+
+    if (min_gender_probability && isNaN(Number(min_gender_probability))){
+        return res.status(422).json({
+            "status": "error",
+            "message": "Invalid query parameters"
+        })
+    }
+
+    if (min_country_probability && isNaN(Number(min_country_probability))){
+        return res.status(422).json({
+            "status": "error",
+            "message": "Invalid query parameters"
+        })
+    }
+
+    //Building the Where Clause
 
     const where = {}
     if (gender) where.gender = gender.toLowerCase()
     if (country_id) where.country_id = country_id.toUpperCase()
     if (age_group) where.age_group = age_group.toLowerCase()
+
+    if (min_age || max_age){
+        where.age = {}
+        if (min_age) where.age.gte = Number(min_age)
+        if (max_age) where.age.lte = Number (max_age)
+    }
+
+
+    if (min_gender_probability) {
+        where.gender_probability = {gte: Number(min_gender_probability)}
+    }
+
+    if (min_country_probability){
+        where.country_probability = {gte: Number(min_country_probability)}
+    }
+
+    //Pagination
+    
+    const pageNum = Math.max(1, parseInt(page) || 1)
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 10))
+    const skip = (pageNum - 1) * limitNum
+
+    // Sorting
+
+    const orderBy = sort_by
+        ? {[sort_by]: (order || 'asc').toLowerCase()}
+        : {created_at: 'asc'}
+
     try{
-        const profiles = await prisma.profile.findMany({where})
-        const count = profiles.length
+        const [data, count] = await Promise.all([
+            prisma.profile.findMany({where, orderBy, skip, take: limitNum}),
+            prisma.profile.count({where})
+        ])
+        
         return res.status(200).json({
-                "status": "success",
-                 "count": count,
-                "data": profiles
-            })
+            status: "success",
+            page: pageNum,
+            limit: limitNum,
+            total: count,
+            data: data
+        })
     }catch(error){
         console.log(error);
         return res.status(500).json({
             "status": "error",
             "message": "Internal Server Error"
         })
+    }
+})
+
+router.get('/search', async (req, res) =>{
+    const {q, page, limit} = req.query
+
+    if (!q || q.trim() === ''){
+        return res.status(400).json({
+            "status": "error",
+            "message": "Invalid query parameters"
+        })
+    }
+
+    const filters = parseQuery(q)
+
+    if (filters.min_age || filters.max_age){
+        filters.age = {}
+
+        if (filters.min_age) filters.age.gte = filters.min_age
+        if (filters.max_age) filters.age.lte = filters.max_age
+        delete filters.min_age
+        delete filters.max_age
+    }
+
+    if (Object.keys(filters).length === 0){
+        return res.status(400).json({
+            "status": 'error',
+            "message": "Unable to interpret query"
+        })
+    }
+
+    const pageNum = parseInt(page) || 1
+    const limitNum = Math.min(parseInt(limit) || 10, 50)
+    const skip = (pageNum - 1) * limitNum
+
+    try {
+        const [profiles, total] = await Promise.all([
+            prisma.profile.findMany({
+                where: filters,
+                skip,
+                take: limitNum
+            }),
+            prisma.profile.count({where: filters})
+        ])
+
+        return res.status(200).json({
+            "status": "success",
+            "page": pageNum,
+            "limit": limitNum,
+            "total": total,
+            "data": profiles
+
+            
+        })
+    }catch(error){
+        console.log(error);
+        return res.status(500).json({
+            "status": "error",
+            "message": "Internal Server Error"
+        })
+        
     }
 })
 

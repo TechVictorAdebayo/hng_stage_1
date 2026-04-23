@@ -1,6 +1,6 @@
-# HNG Stage 1 — Name Intelligence API
+# HNG Stage 2 — Intelligence Query Engine
 
-A REST API that accepts a name, enriches it with gender, age, and nationality data from three external APIs, stores the result in a PostgreSQL database, and exposes endpoints to manage the data.
+A REST API that accepts a name, enriches it with gender, age, and nationality data from three external APIs, stores the result in a PostgreSQL database, and exposes endpoints to query and filter the data using advanced filters, sorting, pagination, and natural language search.
 
 ## Tech Stack
 
@@ -20,19 +20,20 @@ A REST API that accepts a name, enriches it with gender, age, and nationality da
 ### Installation
 
 1. Clone the repository:
-  
-   git clone https://github.com/yourusername/hng-stage1.git
-   cd hng-stage1
+   ```
+   git clone https://github.com/yourusername/hng-stage2.git
+   cd hng-stage2
    ```
 
 2. Install dependencies:
-   
+   ```
    npm install
    ```
 
 3. Create a `.env` file in the root directory:
    ```
-   DATABASE_URL="your_postgresql_connection_string"
+   DATABASE_URL="your_pooled_connection_string"
+   DIRECT_URL="your_direct_connection_string"
    ```
 
 4. Push the database schema:
@@ -41,12 +42,17 @@ A REST API that accepts a name, enriches it with gender, age, and nationality da
    ```
 
 5. Generate the Prisma client:
-   
+   ```
    npx prisma generate
    ```
 
-6. Start the development server:
-   `
+6. Seed the database:
+   ```
+   npx prisma db seed
+   ```
+
+7. Start the development server:
+   ```
    npm run dev
    ```
 
@@ -78,11 +84,11 @@ If a profile with the same name already exists, the existing profile is returned
     "name": "ella",
     "gender": "female",
     "gender_probability": 0.99,
-    "sample_size": 97517,
     "age": 53,
     "age_group": "adult",
     "country_id": "CM",
-    "country_probability": 0.09677289106552395,
+    "country_name": "CM",
+    "country_probability": 0.09,
     "created_at": "2026-04-17T12:51:56.395Z"
   }
 }
@@ -98,11 +104,11 @@ If a profile with the same name already exists, the existing profile is returned
     "name": "ella",
     "gender": "female",
     "gender_probability": 0.99,
-    "sample_size": 97517,
     "age": 53,
     "age_group": "adult",
     "country_id": "CM",
-    "country_probability": 0.09677289106552395,
+    "country_name": "CM",
+    "country_probability": 0.09,
     "created_at": "2026-04-17T12:51:56.395Z"
   }
 }
@@ -112,47 +118,112 @@ If a profile with the same name already exists, the existing profile is returned
 
 ### GET /api/profiles
 
-Returns all profiles. Supports optional filtering via query parameters.
+Returns profiles with support for filtering, sorting, and pagination.
 
 **Query Parameters (all optional):**
 
 
-**Example Request:**
+ gender | string | Filter by gender: `male` or `female` 
+ age_group | string | Filter by age group: `child`, `teenager`, `adult`, `senior` 
+ country_id | string | Filter by ISO country code e.g. `NG`, `KE` 
+ min_age | number | Filter profiles with age greater than or equal to value 
+ max_age | number | Filter profiles with age less than or equal to value 
+ min_gender_probability | number | Filter by minimum gender confidence score 
+ min_country_probability | number | Filter by minimum country confidence score 
+ sort_by | string | Sort by: `age`, `created_at`, `gender_probability` 
+ order | string | Sort order: `asc` or `desc` (default: `asc`) 
+ page | number | Page number (default: `1`) 
+ limit | number | Results per page (default: `10`, max: `50`) 
+
+**Example Requests:**
 ```
-GET /api/profiles?gender=male&country_id=NG
+GET /api/profiles?gender=male&country_id=NG&min_age=25
+GET /api/profiles?sort_by=age&order=desc
+GET /api/profiles?page=2&limit=20
 ```
 
 **Success Response (200 OK):**
 ```json
 {
   "status": "success",
-  "count": 2,
+  "page": 1,
+  "limit": 10,
+  "total": 2026,
   "data": [
     {
       "id": "019d9bc1-7269-7ec1-be3f-8f1ec2e6a78b",
       "name": "john",
       "gender": "male",
       "gender_probability": 1,
-      "sample_size": 2692560,
       "age": 75,
       "age_group": "senior",
       "country_id": "NG",
-      "country_probability": 0.07613817567167579,
+      "country_name": "Nigeria",
+      "country_probability": 0.07,
       "created_at": "2026-04-17T14:03:59.470Z"
-    },
-    {
-      "id": "019d9c03-441c-770a-be8e-ae1ea7ad53b4",
-      "name": "victor",
-      "gender": "male",
-      "gender_probability": 1,
-      "sample_size": 914605,
-      "age": 60,
-      "age_group": "senior",
-      "country_id": "NG",
-      "country_probability": 0.100027619745659,
-      "created_at": "2026-04-17T15:15:53.001Z"
     }
   ]
+}
+```
+
+---
+
+### GET /api/profiles/search
+
+Interprets a plain English query and returns matching profiles. Supports pagination.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|---|---|---|
+| q | string | Natural language search query (required) |
+| page | number | Page number (default: `1`) |
+| limit | number | Results per page (default: `10`, max: `50`) |
+
+**Example Queries:**
+
+| Query | Interpreted As |
+|---|---|
+| `young males from nigeria` | gender=male, min_age=16, max_age=24, country_id=NG |
+| `females above 30` | gender=female, min_age=30 |
+| `adult males from kenya` | gender=male, age_group=adult, country_id=KE |
+| `male and female teenagers above 17` | age_group=teenager, min_age=17 |
+| `seniors from tanzania` | age_group=senior, country_id=TZ |
+
+**Example Request:**
+```
+GET /api/profiles/search?q=young males from nigeria&page=1&limit=10
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "status": "success",
+  "page": 1,
+  "limit": 10,
+  "total": 45,
+  "data": [
+    {
+      "id": "019d9bc1-7269-7ec1-be3f-8f1ec2e6a78b",
+      "name": "emeka",
+      "gender": "male",
+      "gender_probability": 0.98,
+      "age": 20,
+      "age_group": "adult",
+      "country_id": "NG",
+      "country_name": "Nigeria",
+      "country_probability": 0.91,
+      "created_at": "2026-04-17T14:03:59.470Z"
+    }
+  ]
+}
+```
+
+**Unable to Interpret Query (400):**
+```json
+{
+  "status": "error",
+  "message": "Unable to interpret query"
 }
 ```
 
@@ -176,11 +247,11 @@ GET /api/profiles/019d9bc1-7269-7ec1-be3f-8f1ec2e6a78b
     "name": "john",
     "gender": "male",
     "gender_probability": 1,
-    "sample_size": 2692560,
     "age": 75,
     "age_group": "senior",
     "country_id": "NG",
-    "country_probability": 0.07613817567167579,
+    "country_name": "Nigeria",
+    "country_probability": 0.07,
     "created_at": "2026-04-17T14:03:59.470Z"
   }
 }
@@ -228,19 +299,27 @@ All errors follow this structure:
 }
 ```
 
- Status Code 
-
-| 400  Missing or empty name 
-| 422  Name is not a string 
-| 404  Profile not found 
-| 502  External API returned invalid data 
-| 500  Internal server error 
+| Status Code | Description |
+|---|---|
+| 400 | Missing or empty parameter |
+| 422 | Invalid parameter type or value |
+| 404 | Profile not found |
+| 502 | External API returned invalid data |
+| 500 | Internal server error |
 
 ---
 
+## Natural Language Query Parsing
 
+The `/search` endpoint uses rule-based parsing to interpret plain English queries. No AI or LLMs are used.
 
-**Nationality:** The country with the highest probability from the Nationalize API response is selected.
+**Supported keywords:**
+
+- **Gender**: male, males, man, men, boy, female, females, woman, women, lady, ladies, girl
+- **Age groups**: child, children, kid, teenager, teen, adult, senior, elderly
+- **Young/youth**: maps to age range 16–24
+- **Age range**: "above X", "over X", "older than X", "below X", "under X", "younger than X"
+- **Country**: full country name e.g. "nigeria", "kenya", "tanzania"
 
 ---
 
