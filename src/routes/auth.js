@@ -124,8 +124,17 @@ router.get('/github/callback', async (req, res) => {
         maxAge: 5 * 60 * 1000 // 5 minutes
         })
 
-        // redirect to frontend
-        return res.redirect(`${process.env.FRONTEND_URL}/?token=${accessToken}`)
+        return res.status(200).json({
+        status: 'success',
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            role: user.role
+        }
+    })
     }catch(error){
         console.log(error);
         return res.status(500).json({
@@ -291,6 +300,44 @@ router.get('/me', async (req, res) => {
         avatar_url: user.avatar_url,
         role: user.role
       }
+    })
+  } catch (error) {
+    console.log(error)
+    return res.status(500).json({
+      status: 'error',
+      message: 'Internal server error'
+    })
+  }
+})
+
+router.post('/seed-admin', async (req, res) => {
+  const { secret } = req.body
+
+  if (secret !== process.env.ADMIN_SECRET) {
+    return res.status(403).json({
+      status: 'error',
+      message: 'Forbidden'
+    })
+  }
+
+  try {
+    const users = await prisma.user.findMany({ take: 1 })
+
+    if (!users.length) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'No users found. Login first.'
+      })
+    }
+
+    const user = await prisma.user.update({
+      where: { id: users[0].id },
+      data: { role: 'admin' }
+    })
+
+    return res.status(200).json({
+      status: 'success',
+      message: `User ${user.username} is now admin`
     })
   } catch (error) {
     console.log(error)

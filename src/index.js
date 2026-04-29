@@ -25,6 +25,7 @@ app.use(cookieParser())
 const authLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
+  statusCode: 429,
   message: {
     status: 'error',
     message: 'Too many requests, please try again'
@@ -34,6 +35,7 @@ const authLimiter = rateLimit({
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
+   statusCode: 429,
   message: {
     status: 'error',
     message: 'Too many requests, please try again'
