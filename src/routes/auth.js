@@ -125,7 +125,7 @@ router.get('/github/callback', async (req, res) => {
         })
 
         // redirect to frontend
-        return res.redirect(`${process.env.FRONTEND_URL}/`)
+        return res.redirect(`${process.env.FRONTEND_URL}/?token=${accessToken}`)
     }catch(error){
         console.log(error);
         return res.status(500).json({
