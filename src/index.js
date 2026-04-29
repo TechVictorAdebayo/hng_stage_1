@@ -1,4 +1,7 @@
 require('dotenv').config()
+
+console.log("DATABASE_URL:", process.env.DATABASE_URL);
+
 const express = require('express')
 const cors = require('cors')
 const rateLimit = require('express-rate-limit')
@@ -59,8 +62,6 @@ app.use('/api/profiles', profileRouter);
 app.get('/', (req, res) => {
   res.json({ message: 'Server is running' })
 })
-
-console.log("DATABASE_URL:", process.env.DATABASE_URL);
 
 const PORT = process.env.PORT || 3000
 
