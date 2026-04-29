@@ -109,17 +109,23 @@ router.get('/github/callback', async (req, res) => {
         })
 
         //return tokens
-        return res.status(200).json({
-            status: 'success',
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            user: {
-                id: user.id,
-                username: user.username,
-                email: user.email,
-                role: user.role
-            }
+       // set tokens as HTTP-only cookies
+        res.cookie('access_token', accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 3 * 60 * 1000 // 3 minutes
         })
+
+        res.cookie('refresh_token', refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 5 * 60 * 1000 // 5 minutes
+        })
+
+        // redirect to frontend
+        return res.redirect(`${process.env.FRONTEND_URL}/`)
     }catch(error){
         console.log(error);
         return res.status(500).json({
