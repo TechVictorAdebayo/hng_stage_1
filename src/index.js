@@ -17,7 +17,7 @@ app.use(morgan('dev'))
 // Middleware
 app.use(cors({
   origin: process.env.FRONTEND_URL,
-  credential: true
+  credentials: true
 }))
 app.use(express.json())
 app.use(cookieParser())
