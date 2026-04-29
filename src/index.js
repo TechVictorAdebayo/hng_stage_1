@@ -9,6 +9,7 @@ const authRouter = require('./routes/auth')
 
 
 const app = express()
+app.set('trust proxy', 1)
 
 app.use(morgan('dev'))
 
