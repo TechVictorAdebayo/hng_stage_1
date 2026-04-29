@@ -3,6 +3,7 @@ const express = require('express')
 const cors = require('cors')
 const rateLimit = require('express-rate-limit')
 const morgan = require('morgan')
+const cookieParser = require('cookie-parser')
 
 const profileRouter = require('./routes/profiles')
 const authRouter = require('./routes/auth')
@@ -16,6 +17,7 @@ app.use(morgan('dev'))
 // Middleware
 app.use(cors())
 app.use(express.json())
+app.use(cookieParser())
 
 const authLimiter = rateLimit({
   windowMs: 60 * 1000,

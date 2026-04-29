@@ -251,4 +251,54 @@ router.post('/logout', async(req, res) => {
 
 })
 
+router.get('/me', async (req, res) => {
+  const token = req.cookies?.access_token
+
+  if (!token) {
+    return res.status(401).json({
+      status: 'error',
+      message: 'Not authenticated'
+    })
+  }
+
+  const payload = verifyToken(token)
+
+  if (!payload) {
+    return res.status(401).json({
+      status: 'error',
+      message: 'Invalid or expired token'
+    })
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: payload.id }
+    })
+
+    if (!user || !user.is_active) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'User not found or inactive'
+      })
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      data: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        avatar_url: user.avatar_url,
+        role: user.role
+      }
+    })
+  } catch (error) {
+    console.log(error)
+    return res.status(500).json({
+      status: 'error',
+      message: 'Internal server error'
+    })
+  }
+})
+
 module.exports = router
