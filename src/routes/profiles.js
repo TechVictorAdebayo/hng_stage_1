@@ -3,6 +3,7 @@ const express = require ('express');
 const router = express.Router();
 const prisma = require('../prismaClient');
 const {uuidv7} = require ('uuidv7');
+const {authenticate, authorize} = require('../middleware/auth')
 
 const countryMap = {}
 
@@ -85,7 +86,7 @@ function parseQuery(q){
 }
 
 
-router.post('/', async(req, res) => {
+router.post('/', authenticate, authorize('admin'), async(req, res) => {
     const {name} = req.body
 
 
@@ -211,7 +212,7 @@ router.post('/', async(req, res) => {
         
 })
 
-router.get('/', async(req, res) => {
+router.get('/', authenticate, async(req, res) => {
     const {gender, country_id, age_group,
         min_age, max_age,
         min_gender_probability, min_country_probability,
@@ -303,13 +304,25 @@ router.get('/', async(req, res) => {
             prisma.profile.findMany({where, orderBy, skip, take: limitNum}),
             prisma.profile.count({where})
         ])
+
+        const total_pages = Math.ceil( count / limitNum)
         
         return res.status(200).json({
             status: "success",
             page: pageNum,
             limit: limitNum,
             total: count,
-            data: data
+            total_pages,
+            links: {
+                self: `/api/profiles?page=${pageNum}&limit=${limitNum}`,
+                next: pageNum < total_pages
+                ? `/api/profiles?page=${pageNum + 1}&limit=${limitNum}`
+                : null,
+            prev: pageNum > 1
+                ? `/api/profiles?page=${pageNum - 1}&limit=${limitNum}`
+                : null    
+            },
+            data
         })
     }catch(error){
         console.log(error);
@@ -320,7 +333,7 @@ router.get('/', async(req, res) => {
     }
 })
 
-router.get('/search', async (req, res) =>{
+router.get('/search', authenticate, async (req, res) =>{
     const {q, page, limit} = req.query
 
     if (!q || q.trim() === ''){
@@ -362,11 +375,23 @@ router.get('/search', async (req, res) =>{
             prisma.profile.count({where: filters})
         ])
 
+        const total_pages = Math.ceil(total / limitNum)
+
         return res.status(200).json({
             "status": "success",
             "page": pageNum,
             "limit": limitNum,
-            "total": total,
+            total,
+            total_pages,
+            links: {
+                self: `/api/profiles/search?page=${pageNum}&limit=${limitNum}`,
+                next: pageNum < total_pages
+                ? `/api/profiles/search?page=${pageNum + 1}&limit=${limitNum}`
+                : null,
+            prev: pageNum > 1
+                ? `/api/profiles/search?page=${pageNum - 1}&limit=${limitNum}`
+                : null
+            },
             "data": profiles
 
             
@@ -381,7 +406,65 @@ router.get('/search', async (req, res) =>{
     }
 })
 
-router.get('/:id', async(req, res) =>{
+router.get('/export', authenticate, async(req, res) => {
+    const {gender, country_id, age_group, min_age,
+        min_gender_probability,max_age, min_country_probability, 
+        sort_by, order
+    } = req.query
+
+    
+    const where = {}
+    if (gender) where.gender = gender.toLowerCase()
+    if (country_id) where.country_id = country_id.toUpperCase()
+    if (age_group) where.age_group = age_group.toLowerCase()
+
+    if (min_age || max_age){
+        where.age = {}
+        if (min_age) where.age.gte = Number(min_age)
+        if (max_age) where.age.lte = Number (max_age)
+    }
+
+
+    if (min_gender_probability) {
+        where.gender_probability = {gte: Number(min_gender_probability)}
+    }
+
+    if (min_country_probability){
+        where.country_probability = {gte: Number(min_country_probability)}
+    }
+
+    const orderBy = sort_by 
+        ? {[sort_by]: (order || 'asc').toLowerCase()}
+        : {created_at: 'asc'}
+
+    try{
+        const profiles = await prisma.profile.findMany({where, orderBy})
+
+        let csv = 'id,name,gender,gender_probability,age,age_group,country_id,country_name,country_probability,created_at\n'
+
+        for (const profile of profiles){
+            csv += `${profile.id},${profile.name},${profile.gender},${profile.gender_probability},${profile.age},${profile.age_group},${profile.country_id},${profile.country_name},${profile.country_probability},${profile.created_at}\n`
+        }
+
+        const timestamp = Date.now()
+        res.setHeader('Content-Type', 'text/csv')
+        res.setHeader('Content-Disposition', `attachment; filename="profiles_${timestamp}.csv"`)
+        res.send(csv)
+    }catch(error){
+        console.log(error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Internal Server error'
+        })
+        
+    }
+
+})
+
+
+
+
+router.get('/:id', authenticate, async(req, res) =>{
     const id = req.params.id
 
     
@@ -419,7 +502,7 @@ router.get('/:id', async(req, res) =>{
 
 
 
-router.delete('/:id', async(req, res) => {
+router.delete('/:id', authenticate, authorize('admin'), async(req, res) => {
     const id = req.params.id
     if(!id){
         return res.status(400).json({

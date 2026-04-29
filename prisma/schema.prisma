@@ -26,3 +26,26 @@ model Profile {
   @@index([age])
 }
 
+model User {
+  id                    String    @id
+  github_id             String    @unique
+  username              String
+  email                 String?
+  avatar_url            String?
+  role                  String     @default("analyst")
+  is_active             Boolean    @default(true)
+  last_login_at         DateTime?
+  created_at            DateTime    @default(now())
+
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id                   String   @id
+  token                String   @unique
+  userId               String
+  expiresAt            DateTime
+  created_at           DateTime   @default(now())
+
+  user                 User   @relation(fields: [userId], references: [id])
+}
